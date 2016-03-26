@@ -1,76 +1,110 @@
-#import('dart:io', prefix: 'io');
-#import('../lib/sqlite.dart', prefix: 'sqlite');
+import 'dart:io';
+import 'dart:math';
 
-testFirst(db) {
-  var row = db.first("SELECT ?+2, UPPER(?)", [3, "hello"]);
-  Expect.equals(5, row[0]);
-  Expect.equals("HELLO", row[1]);
+import 'package:dart_sqlite/sqlite.dart' as sqlite;
+
+import 'package:guinness2/guinness2.dart';
+
+testFirst(res) {
+  it("handles evaluations", () {
+    var db = res[0];
+
+    var row = db.first("SELECT ?+2, UPPER(?)", [3, "hello"]);
+
+    expect(5).toBe(row[0]);
+    expect("HELLO" == row[1]).toBe(true);
+  });
 }
 
-testRow(db) {
-  var row = db.first("SELECT 42 AS foo");
-  Expect.equals(0, row.index);
+testRow(res) {
+  it("does basic queries", () {
+    var db = res[0];
+    var row = db.first("SELECT 42 AS foo");
+    expect(0).toBe(row.index);
 
-  Expect.equals(42, row[0]);
-  Expect.equals(42, row['foo']);
-  Expect.equals(42, row.foo);
+    expect(42).toBe(row[0]);
+    expect(42).toBe(row['foo']);
+    //expect(42).toBe(row.foo);
 
-  Expect.listEquals([42], row.asList());
-  Expect.mapEquals({"foo": 42}, row.asMap());
+    var resultAsList = row.asList();
+    expect(resultAsList.length).toBe(1);
+    expect(resultAsList).toContain(42);
+    var resultAsMap = row.asMap();
+    expect(resultAsMap.length).toBe(1);
+    expect(resultAsMap['foo']).toBe(42);
+  });
 }
 
-testBulk(db) {
-  createBlogTable(db);
-  var insert = db.prepare("INSERT INTO posts (title, body) VALUES (?,?)");
-  try {
-    Expect.equals(1, insert.execute(["hi", "hello world"]));
-    Expect.equals(1, insert.execute(["bye", "goodbye cruel world"]));
-  } finally {
-    insert.close();
-  }
-  var rows = [];
-  Expect.equals(2, db.execute("SELECT * FROM posts", callback: (row) { rows.add(row); }));
-  Expect.equals(2, rows.length);
-  Expect.equals("hi", rows[0].title);
-  Expect.equals("bye", rows[1].title);
-  Expect.equals(0, rows[0].index);
-  Expect.equals(1, rows[1].index);
-  rows = [];
-  Expect.equals(1, db.execute("SELECT * FROM posts", callback: (row) {
-    rows.add(row);
-    return true;
-  }));
-  Expect.equals(1, rows.length);
-  Expect.equals("hi", rows[0].title);  
+testBulk(res) {
+  it("does database operations", () {
+    var db = res[0];
+    createBlogTable(db);
+    var insert = db.prepare("INSERT INTO posts (title, body) VALUES (?,?)");
+    try {
+      expect(1).toBe(insert.execute(["hi", "hello world"]));
+      expect(1).toBe(insert.execute(["bye", "goodbye cruel world"]));
+    } finally {
+      insert.close();
+    }
+    var rows = [];
+    expect(2).toBe(db.execute("SELECT * FROM posts", callback: (row) {
+      rows.add(row);
+    }));
+    expect(2).toBe(rows.length);
+    expect("hi" == rows[0]['title']);
+    expect("bye" == rows[1]['title']).toBe(true);
+    expect(0).toBe(rows[0].index);
+    expect(1).toBe(rows[1].index);
+    rows = [];
+    expect(1).toBe(db.execute("SELECT * FROM posts", callback: (row) {
+      rows.add(row);
+      return true;
+    }));
+    expect(1).toBe(rows.length);
+    expect("hi" == rows[0]['title']).toBe(true);
+  });
 }
 
-testTransactionSuccess(db) {
-  createBlogTable(db);
-  Expect.equals(42, db.transaction(() {
-    db.execute("INSERT INTO posts (title, body) VALUES (?,?)");
-    return 42;
-  }));
-  Expect.equals(1, db.execute("SELECT * FROM posts"));
-}
-
-testTransactionFailure(db) {
-  createBlogTable(db);
-  try {
-    db.transaction(() {
+testTransactionSuccess(res) {
+  it("handles transactions", () {
+    var db = res[0];
+    createBlogTable(db);
+    expect(42).toBe(db.transaction(() {
       db.execute("INSERT INTO posts (title, body) VALUES (?,?)");
-      throw new UnsupportedOperationException("whee");
-    });
-    fail("Exception should have been propagated");
-  } catch (UnsupportedOperationException expected) {}
-  Expect.equals(0, db.execute("SELECT * FROM posts"));
+      return 42;
+    }));
+    expect(1).toBe(db.execute("SELECT * FROM posts"));
+  });
 }
 
-testSyntaxError(db) {
-  Expect.throws(() => db.execute("random non sql"), (x) => x is sqlite.SqliteSyntaxException);
+testTransactionFailure(res) {
+  it("cancels the transaction when interrupted", () {
+    var db = res[0];
+    createBlogTable(db);
+    try {
+      db.transaction(() {
+        db.execute("INSERT INTO posts (title, body) VALUES (?,?)");
+        throw new ArgumentError("whee");
+      });
+    } catch (expected) {}
+    expect(0).toBe(db.execute("SELECT * FROM posts"));
+  });
 }
 
-testColumnError(db) {
-  Expect.throws(() => db.first("select 2+2")['qwerty'], (x) => x is sqlite.SqliteException);
+testSyntaxError(res) {
+  it("throws an exception for non-sql", () {
+    var db = res[0];
+    expect(() => db.execute("random non sql")).toThrowWith(
+        type: sqlite.SqliteSyntaxException);
+  });
+}
+
+testColumnError(res) {
+  it("throws an error on a bad interpreted query", () {
+    var db = res[0];
+    expect(() => db.first("select 2+2")['qwerty']).toThrowWith(
+        type: sqlite.SqliteException);
+  });
 }
 
 main() {
@@ -86,32 +120,43 @@ createBlogTable(db) {
 }
 
 deleteWhenDone(callback(filename)) {
-  var nonce = (Math.random() * 100000000).toInt();
+  var rng = new Random();
+  var nonce = rng.nextInt(100000000);
   var filename = "dart-sqlite-test-${nonce}";
-  try {
-    callback(filename);
-  } finally {
-    var f = new io.File(filename);
+
+  afterEach(() {
+    var f = new File(filename);
     if (f.existsSync()) f.deleteSync();
-  }
+  });
+    callback(filename);
 }
 
 connectionOnDisk(callback(connection)) {
-  deleteWhenDone((filename) {
-    var c = new sqlite.Database(filename);
-    try {
+  describe("with file", ()
+  {
+    deleteWhenDone((filename) {
+      List c = [];
+      beforeEach(() {
+        c.add(new sqlite.Database.inMemory());
+      });
+      afterEach(() {
+        c.last.close();
+      });
       callback(c);
-    } finally {
-      c.close();
-    }
+    });
   });
 }
 
 connectionInMemory(callback(connection)) {
-  var c = new sqlite.Database.inMemory();
-  try {
+  describe("in memory", ()
+  {
+    List c = [];// = new sqlite.Database.inMemory();
+    beforeEach(() {
+      c.add(new sqlite.Database.inMemory());
+    });
+    afterEach(() {
+      c.last.close();
+    });
     callback(c);
-  } finally {
-    c.close();
-  }
+  });
 }

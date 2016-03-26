@@ -2,9 +2,11 @@
 // Licensed under the Apache License, Version 2.0 (the "License")
 // You may obtain a copy of the License at http://www.apache.org/licenses/LICENSE-2.0
 
-#library("sqlite");
+library sqlite;
 
-#import("dart-ext:dart_sqlite");
+import 'dart:collection';
+
+import "dart-ext:dart_sqlite";
 
 /// A connection to a SQLite database. 
 ///
@@ -23,7 +25,7 @@ class Database {
   Database.inMemory() : this(":memory:");
 
   /// Returns the version number of the SQLite library.
-  static get version() => _version();
+  static get version => _version();
 
   String toString() => "<Sqlite: ${path}>";
 
@@ -68,13 +70,13 @@ class Database {
 
   /// Executes a single SQL statement.
   /// See [Statement.execute].
-  int execute(String statement, [params=const [], bool callback(Row)]) {
+  int execute(String statement, {params: const [], bool callback(Row)}) {
     _checkOpen();
-    statement = prepare(statement);
+    var prepared = prepare(statement);
     try {
-      return statement.execute(params, callback);
+      return prepared.execute(params, callback);
     } finally {
-      statement.close();
+      prepared.close();
     }
   }
 
@@ -84,7 +86,7 @@ class Database {
   Row first(String statement, [params = const []]) {
     _checkOpen();
     var result = null;
-    execute(statement, params, (row) {
+    execute(statement, params: params, callback: (row) {
       result = row;
       return true;
     });
@@ -190,13 +192,12 @@ class _ResultInfo {
 ///
 /// Column names are not guaranteed unless a SQL AS clause is used.
 class Row {
-  final List<String> _resultInfo;
+  final _ResultInfo _columnNameToIndex;
   final List _data;
-  Map _columnToIndex;
   /// This row's offset into the result set. The first row has index 0.
   final int index;
 
-  Row._internal(this.index, this._resultInfo, this._data);
+  Row._internal(this.index, this._columnNameToIndex, this._data);
 
   /// Returns the value from the specified column.
   /// [i] may be a column name or index.
@@ -204,7 +205,7 @@ class Row {
     if (i is int) {
       return _data[i];
     } else {
-      var index = _resultInfo.columnToIndex[i];
+      var index = _columnNameToIndex.columnToIndex[i];
       if (index == null) throw new SqliteException._internal("No such column $i");
       return _data[index];
     }
@@ -218,21 +219,12 @@ class Row {
   Map<String, Object> asMap() {
     var result = new LinkedHashMap<String, Object>();
     for (int i = 0; i < _data.length; i++) {
-      result[_resultInfo.columns[i]] = _data[i];
+      result[_columnNameToIndex.columns[i]] = _data[i];
     }
     return result;
   }
 
   toString() => _data.toString();
-
-  noSuchMethod(String method, List args) {
-    if (args.length == 0 && method.startsWith("get:")) {
-      String property = method.substring(4);
-      var index = _resultInfo.columnToIndex[property];
-      if (index != null) return _data[index];
-    }
-    return super.noSuchMethod(method, args);
-  }
 }
 
 _prepare(db, query, statementObject) native 'PrepareStatement';
