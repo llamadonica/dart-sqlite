@@ -20,7 +20,8 @@
 
 Dart_NativeFunction ResolveName(Dart_Handle name, int argc, bool* auto_setup_out);
 
-static Dart_Handle library;
+static Dart_PersistentHandle library;
+static Dart_PersistentHandle ptr_class_p;
 
 typedef struct {
   sqlite3* db;
@@ -35,6 +36,12 @@ DART_EXPORT Dart_Handle dart_sqlite_Init(Dart_Handle parent_library) {
   if (Dart_IsError(result_code)) return result_code;
 
   library = Dart_NewPersistentHandle(parent_library);
+  
+  Dart_Handle class_name = Dart_NewStringFromCString("_RawPtrImpl");
+  Dart_Handle ptr_class = Dart_CreateNativeWrapperClass(parent_library, 
+          class_name, 1);
+  ptr_class_p = Dart_NewPersistentHandle(ptr_class);
+
   return parent_library;
 }
 
@@ -55,13 +62,13 @@ Dart_Handle CheckDartError(Dart_Handle result) {
 
 sqlite3* get_db(Dart_Handle db_handle) {
   int64_t db_addr;
-  Dart_IntegerToInt64(db_handle, &db_addr);
+  Dart_GetNativeInstanceField(db_handle, 0, &db_addr);
   return (sqlite3*) db_addr;
 }
 
 statement_peer* get_statement(Dart_Handle statement_handle) {
   int64_t statement_addr;
-  Dart_IntegerToInt64(statement_handle, &statement_addr);
+  Dart_GetNativeInstanceField(statement_handle, 0, &statement_addr);
   return (statement_peer*) statement_addr;
 }
 
@@ -70,10 +77,14 @@ DART_FUNCTION(New) {
 
   sqlite3* db;
   const char* cpath;
+  Dart_Handle result;
+
   CheckDartError(Dart_StringToCString(path, &cpath));
   CheckSqlError(db, sqlite3_open(cpath, &db));
-  sqlite3_busy_timeout(db, 100);
-  DART_RETURN(Dart_NewInteger((int64_t) db));
+  // sqlite3_busy_timeout(db, 100); Turning this off for testing
+  CheckDartError(result = Dart_Allocate(Dart_HandleFromPersistent(ptr_class_p)));
+  Dart_SetNativeInstanceField(result, 0, (intptr_t) db);
+  DART_RETURN(result);
 }
 
 DART_FUNCTION(Close) {
@@ -106,7 +117,6 @@ void finalize_statement(void* isolate_callback_data, Dart_WeakPersistentHandle h
     warned = true;
   }
   sqlite3_free(statement);
-  // Dart_DeletePersistentHandle(statement->finalizer);
 }
 
 DART_FUNCTION(PrepareStatement) {
@@ -115,6 +125,8 @@ DART_FUNCTION(PrepareStatement) {
   sqlite3* db = get_db(db_handle);
   const char* sql;
   sqlite3_stmt* stmt;
+  Dart_Handle result;
+
   CheckDartError(Dart_StringToCString(sql_handle, &sql));
   if (sqlite3_prepare_v2(db, sql, strlen(sql), &stmt, NULL)) {
     Dart_Handle params[2];
@@ -126,8 +138,12 @@ DART_FUNCTION(PrepareStatement) {
   statement_peer* peer = (statement_peer*) sqlite3_malloc(sizeof(statement_peer));
   peer->db = db;
   peer->stmt = stmt;
-  peer->finalizer = Dart_NewWeakPersistentHandle(statement_object, peer, 0, finalize_statement);
-  DART_RETURN(Dart_NewInteger((int64_t) peer));
+  
+  CheckDartError(result = Dart_Allocate(Dart_HandleFromPersistent(ptr_class_p)));
+  Dart_SetNativeInstanceField(result, 0, (intptr_t) peer);
+  peer->finalizer = Dart_NewWeakPersistentHandle(result, peer, 0, finalize_statement);
+  DART_RETURN(result);
+  //DART_RETURN(Dart_NewInteger((int64_t) peer));
 }
 
 DART_FUNCTION(Reset) {
@@ -258,6 +274,10 @@ DART_FUNCTION(Step) {
     int status = sqlite3_step(statement->stmt);
     switch (status) {
       case SQLITE_BUSY:
+        fprintf(stderr, "Got sqlite_busy\n");
+        continue; // TODO: have to roll back transaction?
+      case SQLITE_LOCKED:
+        fprintf(stderr, "Got sqlite_locked\n");
         continue; // TODO: have to roll back transaction?
       case SQLITE_DONE:
         DART_RETURN(Dart_NewInteger(sqlite3_changes(statement->db)));
@@ -275,7 +295,7 @@ DART_FUNCTION(CloseStatement) {
 
   statement_peer* statement = get_statement(statement_handle);
   CheckSqlError(statement->db, sqlite3_finalize(statement->stmt));
-  // Dart_DeletePersistentHandle(statement->finalizer);
+  Dart_DeleteWeakPersistentHandle(Dart_CurrentIsolate(), statement->finalizer);
   sqlite3_free(statement);
   DART_RETURN(Dart_Null());
 }
@@ -286,7 +306,7 @@ Dart_NativeFunction ResolveName(Dart_Handle name, int argc, bool* auto_setup_sco
   const char* cname;
   Dart_Handle check_error = Dart_StringToCString(name, &cname);
   if (Dart_IsError(check_error)) Dart_PropagateError(check_error);
-  *auto_setup_scope = true;
+  *auto_setup_scope = false;
 
   EXPORT(New, 1);
   EXPORT(Close, 1);
