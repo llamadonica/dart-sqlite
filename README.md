@@ -1,12 +1,20 @@
-dart-sqlite: SQLite bindings for the Dart VM
+SQLite bindings for the Dart VM
 ============================================
 
-# Download
+[![Build status](https://travis-ci.org/pylaligand/dart-sqlite.svg?branch=master)](https://travis-ci.org/pylaligand/dart-sqlite)
 
-Try the [binary build](https://github.com/downloads/sam-mccall/dart-sqlite/v0.2.zip)
-which should work on Mac, 64-bit Linux, and Windows.
+# Installation
 
-You can also build it yourself, see below.
+Add the library to your specs:
+```
+dependencies:
+  sqlite: ^0.3.0
+```
+
+Add an extra step after `pub get` to download the native libraries:
+```
+pub get && pub run sqlite:install --package-root .
+```
 
 # Example
     #import('lib/sqlite.dart');
@@ -37,7 +45,7 @@ You can also build it yourself, see below.
 
 # Documentation
 
-Yes! [Here's the dartdoc](http://sam-mccall.github.com/dart-sqlite/).
+Yes! [Here's the dartdoc](http://pylaligand.github.com/dart-sqlite/).
 
 # Building (Linux/Mac)
 
@@ -59,32 +67,6 @@ Either edit build.sh to point to the SDK, or set the environment variable DART_S
 ## Running tests
 
     ./build.sh test
-
-# Building (Windows)
-
-You'll need:
-
-  * Dart SDK
-  * dart.lib, the Dart native API library. You can obtain this by compiling Dart from source or grab [this version](https://github.com/downloads/sam-mccall/dart-sqlite/dart.lib) (last updated: 2012-04-24)
-  * The [SQLite source code](http://www.sqlite.org/download.html) (the 'amalgamation')
-  * Visual C++ 2008. The [free version](http://msdn.microsoft.com/en-us/express/future/bb421473) works fine.
-
-Edit build.bat to point to the SDK and the SQLite sources.
-
-## Building the library 
-
-Edit build.bat to specify where you extracted the SQLite and Dart sources.
-
-    C:\Program Files (x86)\Microsoft Visual Studio 9.0\VC\vcvarsall.bat
-    build
-
-## Generating the documentation
-
-    build doc
-
-## Running tests
-
-    build test
 
 # Legal stuff
 Copyright 2012 Google Inc.
