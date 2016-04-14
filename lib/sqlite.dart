@@ -79,7 +79,7 @@ class Database {
     try {
       return statement.execute(params: params, callback: callback);
     } finally {
-      prepared.close();
+      statement.close();
     }
   }
 
@@ -226,7 +226,7 @@ class Row {
   /// This row's offset into the result set. The first row has index 0.
   final int index;
 
-  Row._internal(this.index, this._columnNameToIndex, this._data);
+  Row._internal(this.index, this._resultInfo, this._data);
 
   /// Returns the value from the specified column.
   /// [i] may be a column name or index.
@@ -249,7 +249,7 @@ class Row {
   Map<String, Object> asMap() {
     var result = new Map<String, Object>();
     for (int i = 0; i < _data.length; i++) {
-      result[_columnNameToIndex.columns[i]] = _data[i];
+      result[_resultInfo.columns[i]] = _data[i];
     }
     return result;
   }
