@@ -182,6 +182,10 @@ DART_FUNCTION(Bind) {
       const char* result;
       CheckDartError(Dart_StringToCString(value, &result));
       CheckSqlError(statement->db, sqlite3_bind_text(statement->stmt, i + 1, result, strlen(result), SQLITE_TRANSIENT));
+    } else if (Dart_IsBoolean(value)) {
+      bool result;
+      Dart_BooleanValue(value, &result);
+      CheckSqlError(statement->db, sqlite3_bind_int(statement->stmt, i + 1, result));
     } else if (Dart_IsTypedData(value)) {
       Dart_TypedData_Type type;
       unsigned char* data;
